@@ -1,4 +1,4 @@
-import { StateModel, StateAttribute, SecondaryDataclass } from "../types";
+import type { StateModel, StateAttribute, SecondaryDataclass } from "../types";
 import { makeId } from "../types";
 
 interface StateEditorProps {

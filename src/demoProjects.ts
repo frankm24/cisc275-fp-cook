@@ -1,4 +1,4 @@
-import { Project, DrafterPage, Route, StateModel } from "./types";
+import type { Project, DrafterPage, Route, StateModel } from "./types";
 
 const todoPages: DrafterPage[] = [
     {

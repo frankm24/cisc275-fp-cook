@@ -1,4 +1,10 @@
-import { useCallback, useMemo, useEffect } from "react";
+import {
+    useCallback,
+    useMemo,
+    useEffect,
+    createContext,
+    useContext,
+} from "react";
 import {
     ReactFlow,
     Background,
@@ -9,29 +15,52 @@ import {
     useEdgesState,
     Handle,
     Position,
-    NodeProps,
-    EdgeProps,
     getBezierPath,
     BaseEdge,
+} from "@xyflow/react";
+import type {
+    NodeProps,
+    EdgeProps,
     Node,
     Edge,
     Connection,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { DrafterPage, Route } from "../types";
+import type { DrafterPage, Route } from "../types";
 import { makeId } from "../types";
 
-interface PageNodeData {
+// Node/edge data only contains serializable values to satisfy Record<string, T> constraint
+type PageNodeData = {
     label: string;
     pageId: string;
     isSelected: boolean;
-    onSelect: (pageId: string) => void;
-    onDelete: (pageId: string) => void;
-}
+    [key: string]: string | boolean;
+};
+
+type RouteEdgeData = {
+    routeId: string;
+    label: string;
+    [key: string]: string;
+};
 
 type PageNode = Node<PageNodeData>;
+type RouteEdge = Edge<RouteEdgeData>;
+
+// Context carries the callbacks so they don't live in node/edge data
+interface GraphContextValue {
+    onSelectPage: (pageId: string) => void;
+    onDeletePage: (pageId: string) => void;
+    onDeleteRoute: (routeId: string) => void;
+}
+
+const GraphContext = createContext<GraphContextValue>({
+    onSelectPage: () => undefined,
+    onDeletePage: () => undefined,
+    onDeleteRoute: () => undefined,
+});
 
 function PageNodeComponent({ data }: NodeProps<PageNode>) {
+    const { onSelectPage, onDeletePage } = useContext(GraphContext);
     return (
         <div
             style={{
@@ -49,7 +78,7 @@ function PageNodeComponent({ data }: NodeProps<PageNode>) {
                 color: "#1e293b",
                 userSelect: "none",
             }}
-            onClick={() => data.onSelect(data.pageId)}
+            onClick={() => onSelectPage(data.pageId)}
         >
             <Handle
                 type="target"
@@ -61,7 +90,7 @@ function PageNodeComponent({ data }: NodeProps<PageNode>) {
                 <button
                     onClick={(e) => {
                         e.stopPropagation();
-                        data.onDelete(data.pageId);
+                        onDeletePage(data.pageId);
                     }}
                     style={{
                         background: "none",
@@ -86,14 +115,6 @@ function PageNodeComponent({ data }: NodeProps<PageNode>) {
     );
 }
 
-interface RouteEdgeData {
-    routeId: string;
-    label: string;
-    onDelete: (routeId: string) => void;
-}
-
-type RouteEdge = Edge<RouteEdgeData>;
-
 function RouteEdgeComponent({
     id,
     sourceX,
@@ -104,6 +125,7 @@ function RouteEdgeComponent({
     targetPosition,
     data,
 }: EdgeProps<RouteEdge>) {
+    const { onDeleteRoute } = useContext(GraphContext);
     const [edgePath, labelX, labelY] = getBezierPath({
         sourceX,
         sourceY,
@@ -152,7 +174,7 @@ function RouteEdgeComponent({
                             {data.label}
                         </span>
                         <button
-                            onClick={() => data.onDelete(data.routeId)}
+                            onClick={() => onDeleteRoute(data.routeId)}
                             style={{
                                 background: "none",
                                 border: "none",
@@ -172,7 +194,7 @@ function RouteEdgeComponent({
     );
 }
 
-// Declare outside component to avoid recreation
+// Declare outside component to avoid recreation on render
 const nodeTypes = { pageNode: PageNodeComponent };
 const edgeTypes = { routeEdge: RouteEdgeComponent };
 
@@ -202,6 +224,11 @@ export function PageGraph({
     onDeleteRoute,
     onUpdatePagePosition,
 }: PageGraphProps) {
+    // Compute initial nodes once on mount only. @xyflow/react manages its own
+    // internal node state after initialization; subsequent changes (labels,
+    // selection, additions, deletions) are handled by the useEffect hooks below.
+    // Including `pages`/`selectedPageId` in the dependency array would reset
+    // ReactFlow's layout on every update, discarding drag positions.
     const initialNodes: PageNode[] = useMemo(
         () =>
             pages.map((page) => ({
@@ -212,14 +239,13 @@ export function PageGraph({
                     label: page.name,
                     pageId: page.id,
                     isSelected: page.id === selectedPageId,
-                    onSelect: onSelectPage,
-                    onDelete: onDeletePage,
                 },
             })),
         // eslint-disable-next-line react-hooks/exhaustive-deps
         []
     );
 
+    // Compute initial edges once on mount only — same rationale as initialNodes.
     const initialEdges: RouteEdge[] = useMemo(
         () =>
             routes.map((route) => ({
@@ -230,9 +256,9 @@ export function PageGraph({
                 data: {
                     routeId: route.id,
                     label: route.name,
-                    onDelete: onDeleteRoute,
                 },
             })),
+        // Only run once on mount
         // eslint-disable-next-line react-hooks/exhaustive-deps
         []
     );
@@ -240,7 +266,7 @@ export function PageGraph({
     const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
     const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
-    // Sync nodes when pages change (selection, names)
+    // Sync node labels and selection when pages change
     useEffect(() => {
         setNodes((prev) =>
             prev.map((node) => {
@@ -252,13 +278,11 @@ export function PageGraph({
                         ...node.data,
                         label: page.name,
                         isSelected: page.id === selectedPageId,
-                        onSelect: onSelectPage,
-                        onDelete: onDeletePage,
                     },
                 };
             })
         );
-    }, [pages, selectedPageId, onSelectPage, onDeletePage, setNodes]);
+    }, [pages, selectedPageId, setNodes]);
 
     // Sync edges when routes change
     useEffect(() => {
@@ -271,11 +295,10 @@ export function PageGraph({
                 data: {
                     routeId: route.id,
                     label: route.name,
-                    onDelete: onDeleteRoute,
                 },
             }))
         );
-    }, [routes, onDeleteRoute, setEdges]);
+    }, [routes, setEdges]);
 
     // Add new page nodes when pages array grows
     useEffect(() => {
@@ -291,14 +314,12 @@ export function PageGraph({
                         label: page.name,
                         pageId: page.id,
                         isSelected: page.id === selectedPageId,
-                        onSelect: onSelectPage,
-                        onDelete: onDeletePage,
                     },
                 }));
             if (newNodes.length === 0) return prev;
             return [...prev, ...newNodes];
         });
-    }, [pages, selectedPageId, onSelectPage, onDeletePage, setNodes]);
+    }, [pages, selectedPageId, setNodes]);
 
     // Remove deleted page nodes
     useEffect(() => {
@@ -332,77 +353,87 @@ export function PageGraph({
                         data: {
                             routeId: newRoute.id,
                             label: routeName,
-                            onDelete: onDeleteRoute,
                         },
                     },
                     eds
                 )
             );
         },
-        [onAddRoute, onDeleteRoute, setEdges]
+        [onAddRoute, setEdges]
     );
 
-    function handleNodeDragStop(_event: React.MouseEvent, node: PageNode) {
+    function handleNodeDragStop(_event: React.MouseEvent, node: Node) {
         onUpdatePagePosition(node.id, node.position);
     }
 
+    const contextValue: GraphContextValue = useMemo(
+        () => ({
+            onSelectPage,
+            onDeletePage,
+            onDeleteRoute,
+        }),
+        [onSelectPage, onDeletePage, onDeleteRoute]
+    );
+
     return (
-        <div style={{ height: "100%", position: "relative" }}>
-            <div
-                style={{
-                    position: "absolute",
-                    top: 12,
-                    left: 12,
-                    zIndex: 10,
-                    display: "flex",
-                    gap: 8,
-                }}
-            >
-                <button
-                    onClick={onAddPage}
-                    style={{
-                        background: "#3b82f6",
-                        color: "white",
-                        border: "none",
-                        borderRadius: 6,
-                        padding: "8px 14px",
-                        cursor: "pointer",
-                        fontWeight: 600,
-                        fontSize: 13,
-                        boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
-                    }}
-                >
-                    + Add Page
-                </button>
+        <GraphContext.Provider value={contextValue}>
+            <div style={{ height: "100%", position: "relative" }}>
                 <div
                     style={{
-                        background: "rgba(255,255,255,0.9)",
-                        border: "1px solid #e2e8f0",
-                        borderRadius: 6,
-                        padding: "8px 12px",
-                        fontSize: 12,
-                        color: "#64748b",
-                        boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
+                        position: "absolute",
+                        top: 12,
+                        left: 12,
+                        zIndex: 10,
+                        display: "flex",
+                        gap: 8,
                     }}
                 >
-                    Drag handles to connect pages → routes
+                    <button
+                        onClick={onAddPage}
+                        style={{
+                            background: "#3b82f6",
+                            color: "white",
+                            border: "none",
+                            borderRadius: 6,
+                            padding: "8px 14px",
+                            cursor: "pointer",
+                            fontWeight: 600,
+                            fontSize: 13,
+                            boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
+                        }}
+                    >
+                        + Add Page
+                    </button>
+                    <div
+                        style={{
+                            background: "rgba(255,255,255,0.9)",
+                            border: "1px solid #e2e8f0",
+                            borderRadius: 6,
+                            padding: "8px 12px",
+                            fontSize: 12,
+                            color: "#64748b",
+                            boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
+                        }}
+                    >
+                        Drag handles to connect pages → routes
+                    </div>
                 </div>
+                <ReactFlow
+                    nodes={nodes}
+                    edges={edges}
+                    onNodesChange={onNodesChange}
+                    onEdgesChange={onEdgesChange}
+                    onConnect={onConnect}
+                    onNodeDragStop={handleNodeDragStop}
+                    nodeTypes={nodeTypes}
+                    edgeTypes={edgeTypes}
+                    fitView
+                >
+                    <Background />
+                    <Controls />
+                    <MiniMap />
+                </ReactFlow>
             </div>
-            <ReactFlow
-                nodes={nodes}
-                edges={edges}
-                onNodesChange={onNodesChange}
-                onEdgesChange={onEdgesChange}
-                onConnect={onConnect}
-                onNodeDragStop={handleNodeDragStop}
-                nodeTypes={nodeTypes}
-                edgeTypes={edgeTypes}
-                fitView
-            >
-                <Background />
-                <Controls />
-                <MiniMap />
-            </ReactFlow>
-        </div>
+        </GraphContext.Provider>
     );
 }

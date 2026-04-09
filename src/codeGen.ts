@@ -1,4 +1,4 @@
-import {
+import type {
     Project,
     DrafterPage,
     StateModel,

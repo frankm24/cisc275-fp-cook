@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { Project, DrafterPage, Route, StateModel } from "../types";
+import type { Project, DrafterPage, Route, StateModel } from "../types";
 import { saveProject, deleteProject } from "../storage";
 import { PageGraph } from "./PageGraph";
 import { PageEditor } from "./PageEditor";

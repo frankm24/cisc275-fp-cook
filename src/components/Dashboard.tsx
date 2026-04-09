@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Project } from "../types";
+import type { Project } from "../types";
 import { loadProjects, saveProject, deleteProject } from "../storage";
 import { demoProject1, demoProject2 } from "../demoProjects";
 import { makeId } from "../types";

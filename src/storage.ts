@@ -1,4 +1,4 @@
-import { Project } from "./types";
+import type { Project } from "./types";
 
 const STORAGE_KEY = "drafter_projects";
 

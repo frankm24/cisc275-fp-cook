@@ -1,5 +1,5 @@
 import { Document, Packer, Paragraph, TextRun, HeadingLevel } from "docx";
-import { Project } from "./types";
+import type { Project } from "./types";
 
 export async function exportToDocx(project: Project): Promise<void> {
     const paragraphs: Paragraph[] = [];

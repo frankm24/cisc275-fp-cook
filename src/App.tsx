@@ -2,7 +2,7 @@ import { useState } from "react";
 import { loadProjects } from "./storage";
 import { Dashboard } from "./components/Dashboard";
 import { ProjectEditor } from "./components/ProjectEditor";
-import { Project } from "./types";
+import type { Project } from "./types";
 import "./App.css";
 
 export function App() {
